@@ -206,8 +206,9 @@ with col3:
         st.session_state.viewing_post = None
         st.rerun()
 
-# Month navigation
-nav_col1, nav_col2, nav_col3 = st.columns([1, 2, 1])
+# Month navigation with larger month/year display
+st.markdown("<br>", unsafe_allow_html=True)
+nav_col1, nav_col2, nav_col3 = st.columns([1, 3, 1])
 with nav_col1:
     if st.button("← Previous", use_container_width=True):
         current = st.session_state.current_date
@@ -215,7 +216,11 @@ with nav_col1:
         st.rerun()
 
 with nav_col2:
-    st.markdown(f"<h2 style='text-align: center; color: white;'>{st.session_state.current_date.strftime('%B %Y')}</h2>", unsafe_allow_html=True)
+    st.markdown(f"""
+        <h1 style='text-align: center; color: white; font-size: 48px; margin: 20px 0;'>
+            {st.session_state.current_date.strftime('%B %Y')}
+        </h1>
+    """, unsafe_allow_html=True)
 
 with nav_col3:
     if st.button("Next →", use_container_width=True):
