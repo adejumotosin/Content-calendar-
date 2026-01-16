@@ -148,7 +148,9 @@ if 'viewing_post' not in st.session_state:
     st.session_state.viewing_post = None
 
 def get_calendar_data(year, month):
-    """Get calendar data for the given month"""
+    """Get calendar data for the given month with Sunday as first day"""
+    # Set Sunday as first day of week
+    calendar.setfirstweekday(calendar.SUNDAY)
     cal = calendar.monthcalendar(year, month)
     return cal
 
