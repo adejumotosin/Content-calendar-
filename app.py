@@ -344,6 +344,10 @@ if st.session_state.viewing_post and not st.session_state.show_modal:
     if post.get('notes'):
         st.markdown("**📝 Notes:**")
         st.write(post['notes'])
+    
+    if post.get('comments'):
+        st.markdown("**💬 Comments:**")
+        st.info(post['comments'])
 
 # Add/Edit Post Modal
 if st.session_state.show_modal:
@@ -371,6 +375,8 @@ if st.session_state.show_modal:
         
         notes = st.text_area("Notes", value=post.get('notes', ''), height=100, placeholder="Additional details, hashtags, mentions, etc.")
         
+        comments = st.text_area("Comments", value=post.get('comments', ''), height=100, placeholder="Internal comments, feedback, approvals, etc.")
+        
         col1, col2, col3 = st.columns([2, 1, 1])
         with col1:
             submit = st.form_submit_button("💾 Save Post", type="primary", use_container_width=True)
@@ -391,7 +397,8 @@ if st.session_state.show_modal:
                 'status': status,
                 'content_type': content_type,
                 'platforms': platforms,
-                'notes': notes
+                'notes': notes,
+                'comments': comments
             }
             
             if st.session_state.editing_post:
@@ -423,6 +430,23 @@ if st.session_state.show_modal:
 
 # Sidebar
 with st.sidebar:
+    # Brand logo and name
+    try:
+        # Try to load the logo image
+        st.image("purple_crayola_logo.png", width=150)
+        st.markdown("<h2 style='text-align: center; color: #7c3aed; margin: 0 0 20px 0; font-size: 28px; font-weight: 600;'>Purple Crayola</h2>", unsafe_allow_html=True)
+    except:
+        # Fallback if logo not found
+        st.markdown("""
+            <div style='text-align: center; margin-bottom: 30px;'>
+                <div style='background: #7c3aed; border-radius: 20px; width: 80px; height: 80px; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center;'>
+                    <span style='font-size: 50px; color: white; font-weight: bold;'>P</span>
+                </div>
+                <h2 style='color: #7c3aed; margin: 0; font-size: 28px; font-weight: 600;'>Purple Crayola</h2>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
     st.header("📊 Calendar Stats")
     st.metric("Total Posts", len(st.session_state.posts))
     st.success("💾 Auto-saved")
