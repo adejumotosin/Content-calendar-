@@ -117,7 +117,7 @@ def get_gsheet_connection():
             scopes=SCOPES
         )
         client = gspread.authorize(credentials)
-        sheet = client.open_by_key(st.secrets["sheet_key"]).sheet1
+        sheet = client.open_by_key(st.secrets["gcp_service_account"]["sheet_key"]).sheet1
         
         # Initialize headers if sheet is empty
         if sheet.row_count == 0 or not sheet.row_values(1):
