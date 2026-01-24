@@ -3,8 +3,8 @@ import pandas as pd
 from datetime import datetime, timedelta
 import calendar
 import json
-import pickle
-from pathlib import Path
+import gspread
+from google.oauth2.service_account import Credentials
 
 # Page configuration
 st.set_page_config(
@@ -102,27 +102,82 @@ CONTENT_TYPES = ['Carousel', 'Video', 'Image', 'Reel', 'Story', 'Article', 'Info
 STATUSES = ['Draft', 'Copy Ready', 'Scheduled', 'Published']
 PLATFORMS = ['Instagram', 'Facebook', 'LinkedIn', 'Twitter', 'TikTok', 'YouTube']
 
-# File-based storage path
-STORAGE_FILE = Path("calendar_data.pkl")
+# Google Sheets Configuration
+SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
 
-# Storage functions using file-based persistence
-def load_posts():
-    """Load posts from file storage"""
+@st.cache_resource
+def get_gsheet_connection():
+    """Create a connection to Google Sheets"""
     try:
-        if STORAGE_FILE.exists():
-            with open(STORAGE_FILE, 'rb') as f:
-                data = pickle.load(f)
-                return data.get('posts', []), data.get('next_id', 1)
-        return [], 1
+        credentials = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=SCOPES
+        )
+        client = gspread.authorize(credentials)
+        sheet = client.open_by_key(st.secrets["sheet_key"]).sheet1
+        
+        # Initialize headers if sheet is empty
+        if sheet.row_count == 0 or not sheet.row_values(1):
+            sheet.update('A1:B1', [['id', 'data']])
+        
+        return sheet
+    except Exception as e:
+        st.error(f"Error connecting to Google Sheets: {str(e)}")
+        st.info("Make sure you've set up secrets.toml correctly and shared the sheet with your service account email.")
+        return None
+
+def load_posts():
+    """Load posts from Google Sheets"""
+    try:
+        sheet = get_gsheet_connection()
+        if not sheet:
+            return [], 1
+        
+        # Get all records (skip header row)
+        all_values = sheet.get_all_values()
+        
+        if len(all_values) <= 1:  # Only header or empty
+            return [], 1
+        
+        posts = []
+        for row in all_values[1:]:  # Skip header
+            if len(row) >= 2 and row[1]:  # Has data
+                try:
+                    post = json.loads(row[1])
+                    posts.append(post)
+                except json.JSONDecodeError:
+                    continue
+        
+        # Calculate next_id
+        next_id = max([p.get('id', 0) for p in posts], default=0) + 1
+        
+        return posts, next_id
     except Exception as e:
         st.error(f"Error loading posts: {str(e)}")
         return [], 1
 
 def save_posts(posts, next_id):
-    """Save posts to file storage"""
+    """Save posts to Google Sheets"""
     try:
-        with open(STORAGE_FILE, 'wb') as f:
-            pickle.dump({'posts': posts, 'next_id': next_id}, f)
+        sheet = get_gsheet_connection()
+        if not sheet:
+            return False
+        
+        # Clear existing data (except header)
+        sheet.clear()
+        
+        # Add header
+        sheet.update('A1:B1', [['id', 'data']])
+        
+        # Prepare data for batch update
+        if posts:
+            rows_data = [[post['id'], json.dumps(post)] for post in posts]
+            # Update all rows at once (more efficient)
+            sheet.update(f'A2:B{len(posts) + 1}', rows_data)
+        
         return True
     except Exception as e:
         st.error(f"Error saving posts: {str(e)}")
@@ -130,7 +185,8 @@ def save_posts(posts, next_id):
 
 # Initialize session state
 if 'posts' not in st.session_state:
-    st.session_state.posts, st.session_state.next_id = load_posts()
+    with st.spinner('Loading calendar data...'):
+        st.session_state.posts, st.session_state.next_id = load_posts()
 
 if 'next_id' not in st.session_state:
     st.session_state.next_id = 1
@@ -149,7 +205,6 @@ if 'viewing_post' not in st.session_state:
 
 def get_calendar_data(year, month):
     """Get calendar data for the given month with Sunday as first day"""
-    # Set Sunday as first day of week
     calendar.setfirstweekday(calendar.SUNDAY)
     cal = calendar.monthcalendar(year, month)
     return cal
@@ -187,7 +242,6 @@ def clear_all_posts():
 
 def import_posts(imported_posts):
     """Import posts from JSON"""
-    # Reassign IDs to avoid conflicts
     for post in imported_posts:
         post['id'] = st.session_state.next_id
         st.session_state.next_id += 1
@@ -253,7 +307,6 @@ for week in cal_data:
                 container_html += f"<div class='day-number'>{day}</div>"
                 st.markdown(container_html, unsafe_allow_html=True)
                 
-                # Add post button
                 if st.button("➕", key=f"add_{date_str}", help="Add post", use_container_width=True):
                     st.session_state.show_modal = True
                     st.session_state.editing_post = None
@@ -261,7 +314,6 @@ for week in cal_data:
                     st.session_state.selected_date = date_str
                     st.rerun()
                 
-                # Display posts as clickable cards
                 for post in day_posts:
                     post_html = f"<div class='post-card'>"
                     post_html += f"<div class='post-title'>{post['title'][:35]}{'...' if len(post['title']) > 35 else ''}</div>"
@@ -401,12 +453,13 @@ if st.session_state.show_modal:
                 'comments': comments
             }
             
-            if st.session_state.editing_post:
-                update_post(st.session_state.editing_post['id'], post_data)
-                st.success("✅ Post updated!")
-            else:
-                add_post(post_data)
-                st.success("✅ Post created!")
+            with st.spinner('Saving...'):
+                if st.session_state.editing_post:
+                    update_post(st.session_state.editing_post['id'], post_data)
+                    st.success("✅ Post updated!")
+                else:
+                    add_post(post_data)
+                    st.success("✅ Post created!")
             
             st.session_state.show_modal = False
             st.session_state.editing_post = None
@@ -415,7 +468,8 @@ if st.session_state.show_modal:
             st.rerun()
         
         if delete:
-            delete_post(st.session_state.editing_post['id'])
+            with st.spinner('Deleting...'):
+                delete_post(st.session_state.editing_post['id'])
             st.session_state.show_modal = False
             st.session_state.editing_post = None
             st.success("✅ Post deleted!")
@@ -430,13 +484,10 @@ if st.session_state.show_modal:
 
 # Sidebar
 with st.sidebar:
-    # Brand logo and name
     try:
-        # Try to load the logo image
         st.image("purple_crayola_logo.png", width=150)
         st.markdown("<h2 style='text-align: center; color: #7c3aed; margin: 0 0 20px 0; font-size: 28px; font-weight: 600;'>Purple Crayola</h2>", unsafe_allow_html=True)
     except:
-        # Fallback if logo not found
         st.markdown("""
             <div style='text-align: center; margin-bottom: 30px;'>
                 <div style='background: #7c3aed; border-radius: 20px; width: 80px; height: 80px; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center;'>
@@ -449,7 +500,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("📊 Calendar Stats")
     st.metric("Total Posts", len(st.session_state.posts))
-    st.success("💾 Auto-saved")
+    st.success("☁️ Cloud Synced")
     
     if st.session_state.posts:
         status_counts = {}
@@ -488,7 +539,8 @@ with st.sidebar:
     if uploaded_file is not None:
         try:
             imported_posts = json.load(uploaded_file)
-            import_posts(imported_posts)
+            with st.spinner('Importing...'):
+                import_posts(imported_posts)
             st.success(f"✅ Imported {len(imported_posts)} posts!")
             st.rerun()
         except Exception as e:
@@ -497,6 +549,7 @@ with st.sidebar:
     st.markdown("---")
     if st.button("🗑️ Clear All", use_container_width=True):
         if st.checkbox("⚠️ Confirm deletion"):
-            clear_all_posts()
+            with st.spinner('Clearing...'):
+                clear_all_posts()
             st.success("✅ Cleared!")
             st.rerun()
